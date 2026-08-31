@@ -4,6 +4,8 @@ import random
 import os
 import math
 import pygame
+import importlib
+import glob
 
 # --- PYGAME JOYSTICK INITIALIZATION ---
 pygame.init()
@@ -35,9 +37,9 @@ notification = Text(
     text=controller_msg,
     position=(0, 0.4),
     origin=(0, 0),
-    scale=1.5,
+    scale=1.2,
     color=color.lime if xbox_controller else color.yellow,
-    background=True
+    parent=camera.ui
 )
 destroy(notification, delay=4.0)
 
@@ -100,6 +102,22 @@ def apply_weapon_mode(new_mode):
 # --- 3. MENU & BACKGROUND ---
 menu_bg = Entity(parent=camera, model='quad', color=color.black, scale=(20, 20), position=(0, 0, 1), always_on_top=True)
 title_screen = Entity(parent=camera, model='quad', texture='assets/title.png', scale=(1.6, 0.9, 1), position=(0, 0, 0.85), always_on_top=True)
+
+# --- START / ENTER UI ---
+start_instruction=Entity(
+    model='quad',
+    texture='assets/press_start.png',
+    scale=(0.4, 0.15),
+    position=(0, -0.3, 0.8),
+    always_on_top=True
+)
+
+start_btn_touch = Button(
+    scale=(0.4, 0.15),
+    position=(0, -0.3),
+    color=color.clear,
+    parent=camera.ui
+)
 
 game_started = False
 
@@ -190,6 +208,28 @@ sk_gold.on_click = skin_gold
 sk_black.on_click = skin_black
 
 close_all_tabs()
+
+# --- MOD LOADING SYSTEM ---
+def load_mods():
+    if not os.path.exists('mods'):
+        os.makedirs('mods')
+
+    mod_files = glob.glob("mods/*.py")
+    for mod_path in mod_files:
+        mod_name = os.path.basename(mod_path)[:-3]
+        if mod_name != "__init__":
+            try:
+                spec = importlib.util.spec_from_file_location(mod_name, mod_path)
+                mod = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+
+                if hasattr(mod, 'init_mod'):
+                    mod.init_mod(app, player, gun)
+                print(f"[MOD SYSTEM] Loaded mod: {mod_name}")
+            except Exception as e:
+                print(f"[MOD SYSTEM] Error loading mod {mod_name}: {e}")
+
+load_mods()
 
 # --- 4. WORLD & BOTS ---
 floor = Entity(model='cube', texture='white_cube', color=color.green, scale=(200, 10, 200), position=(0, -5, 0), collider='box', name='floor')
@@ -321,7 +361,7 @@ def update():
 
             player.rotation_y += look_x * gamepad_camera_sensitivity * time.dt
             camera.rotation_x += look_y * gamepad_camera_sensitivity * time.dt
-            camera.rotation_x = clip(camera.rotation_x, -85, 85) 
+            camera.rotation_x = clamp(camera.rotation_x, -85, 85) 
 
             # 3. REAL LINUX PYGAME TRIGGERS MAPPING (AXIS 2 AND AXIS 5)
             # When resting, axes are -1.0. When fully pressed, they go to 1.0.
