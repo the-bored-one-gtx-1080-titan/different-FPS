@@ -1,5 +1,5 @@
 # different-FPS
-This a python only video game which is still in alpha and under multiple bugs also my friend is going to contribute this in the near future
+This a python only video game which is still in alpha and under multiple bugs also we can announce a new member of the game redred_reps happy to see you
 
 socials (for now)
 
