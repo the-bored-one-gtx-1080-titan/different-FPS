@@ -1,5 +1,7 @@
 # different-FPS
 
+A game made by theboredbit
+
 # Credits
 
 to me for having the idea
