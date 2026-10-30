@@ -6,6 +6,7 @@ import math
 import pygame
 import importlib
 import glob
+import requests
 
 # --- PYGAME JOYSTICK INITIALIZATION ---
 pygame.init()
@@ -26,6 +27,9 @@ app = Ursina()
 window.fullscreen = True
 window.fps_counter.enabled = True
 window.exit_button.visible = False
+
+CURRENT_VERSION = "v0.0.7 alpha"
+GITHUB_REPO = "the-bored-one-gtx-1080-titan/different-FPS"
 
 # --- DAY / NIGHT SKY CYCLE ---
 day_color = color.rgb(100, 180, 255)
@@ -81,7 +85,6 @@ shoot_speed = 0.1
 gun_skin_color = color.red  
 was_zoomed = False  
 
-# States for buttons
 lb_held = False
 rb_held = False
 rt_held = False
@@ -99,28 +102,7 @@ def apply_weapon_mode(new_mode):
         gun.color = color.green
         current_sound = sounds.get('green')
 
-# --- 3. MENU & BACKGROUND ---
-menu_bg = Entity(parent=camera, model='quad', color=color.black, scale=(20, 20), position=(0, 0, 1), always_on_top=True)
-title_screen = Entity(parent=camera, model='quad', texture='assets/title.png', scale=(1.6, 0.9, 1), position=(0, 0, 0.85), always_on_top=True)
-
-# --- START / ENTER UI ---
-start_instruction=Entity(
-    model='quad',
-    texture='assets/press_start.png',
-    scale=(0.4, 0.15),
-    position=(0, -0.3, 0.8),
-    always_on_top=True
-)
-
-start_btn_touch = Button(
-    scale=(0.4, 0.15),
-    position=(0, -0.3),
-    color=color.clear,
-    parent=camera.ui
-)
-
-game_started = False
-
+# --- SETTINGS FUNCTIONS ---
 def set_fullscreen(): window.fullscreen = True; window.borderless = True
 def set_windowed(): window.fullscreen = False; window.borderless = True
 def set_borderless(): window.fullscreen = False; window.borderless = False
@@ -132,88 +114,112 @@ def set_sens_high(): player.mouse_sensitivity = Vec2(70, 70)
 def toggle_sound():
     global sound_enabled
     sound_enabled = not sound_enabled
-    if not sound_btn.texture:
-        sound_btn.color = color.lime if sound_enabled else color.maroon
+    print(f"Sound toggled: {sound_enabled}")
 
-def skin_red(): gun.color = color.red; global gun_skin_color; gun_skin_color = color.red
-def skin_blue(): gun.color = color.blue; global gun_skin_color; gun_skin_color = color.blue
-def skin_green(): gun.color = color.green; global gun_skin_color; gun_skin_color = color.green
-def skin_gold(): gun.color = color.gold; global gun_skin_color; gun_skin_color = color.gold
-def skin_black(): gun.color = color.black; global gun_skin_color; gun_skin_color = color.black
+def apply_low_end_settings():
+    camera.clip_plane_far = 80
+    window.fps_counter.enabled = True
+    print("[OPTIMIZATION] Low-end settings applied.")
 
-def open_settings():
-    close_all_tabs()
-    btn_full.enabled = True; btn_win.enabled = True; btn_bord.enabled = True
-    btn_slow.enabled = True; btn_med.enabled = True; btn_high.enabled = True
-    sound_btn.enabled = True
-    if not btn_settings_tab.texture: btn_settings_tab.color = color.white
+def skin_red(): global gun_skin_color; gun_skin_color = color.red; gun.color = color.red
+def skin_blue(): global gun_skin_color; gun_skin_color = color.blue; gun.color = color.blue
+def skin_green(): global gun_skin_color; gun_skin_color = color.green; gun.color = color.green
+def skin_gold(): global gun_skin_color; gun_skin_color = color.gold; gun.color = color.gold
+def skin_black(): global gun_skin_color; gun_skin_color = color.black; gun.color = color.black
 
-def open_skins():
-    close_all_tabs()
-    sk_red.enabled = True; sk_blue.enabled = True; sk_green.enabled = True
-    sk_gold.enabled = True; sk_black.enabled = True
-    if not btn_skins_tab.texture: btn_skins_tab.color = color.white
+# --- 3. MODERN CLEAN UI SYSTEM (v0.0.7) ---
+main_menu_panel = Entity(parent=camera.ui, enabled=True)
+menu_bg = Entity(parent=main_menu_panel, model='quad', color=color.rgb(15, 15, 20), scale=(2, 2), z=1)
 
-def close_all_tabs():
-    btn_full.enabled = False; btn_win.enabled = False; btn_bord.enabled = False
-    btn_slow.enabled = False; btn_med.enabled = False; btn_high.enabled = False
-    sound_btn.enabled = False
-    sk_red.enabled = False; sk_blue.enabled = False; sk_green.enabled = False
-    sk_gold.enabled = False; sk_black.enabled = False
-    if not btn_settings_tab.texture: btn_settings_tab.color = color.gray
-    if not btn_skins_tab.texture: btn_skins_tab.color = color.lime
+title_text = Text(
+    text="DIFFERENT FPS", 
+    parent=main_menu_panel, 
+    position=(0, 0.35), 
+    origin=(0, 0), 
+    scale=3, 
+    color=color.cyan
+)
 
-def create_menu_button(img_name, default_color, scale, position):
-    full_path = f'assets/menu/{img_name}'
-    if os.path.exists(full_path):
-        return Button(texture=full_path, scale=scale, position=position, parent=camera.ui, color=color.white)
-    else:
-        return Button(color=default_color, scale=scale, position=position, parent=camera.ui)
+sub_title = Text(
+    text="v0.0.7 alpha - Raspberry Pi & PC Edition", 
+    parent=main_menu_panel, 
+    position=(0, 0.27), 
+    origin=(0, 0), 
+    scale=1.2, 
+    color=color.gray
+)
 
-btn_settings_tab = create_menu_button('settings_tab.png', color.gray, (0.16, 0.05), (-0.55, -0.4))
-btn_settings_tab.on_click = open_settings
+def create_clean_button(text, position, action, parent=main_menu_panel, color_bg=color.rgb(35, 35, 45)):
+    btn = Button(
+        text=text,
+        parent=parent,
+        position=position,
+        scale=(0.35, 0.07),
+        color=color_bg,
+        text_color=color.white,
+        highlight_color=color.rgb(55, 120, 200),
+        pressed_color=color.rgb(30, 80, 140)
+    )
+    btn.on_click = action
+    return btn
 
-btn_skins_tab = create_menu_button('skins_tab.png', color.lime, (0.16, 0.05), (0.55, -0.4))
-btn_skins_tab.on_click = open_skins
+settings_panel = Entity(parent=main_menu_panel, enabled=False)
+skins_panel = Entity(parent=main_menu_panel, enabled=False)
 
-btn_full = create_menu_button('full.png', color.dark_gray, (0.16, 0.04), (-0.55, 0.3))
-btn_win = create_menu_button('win.png', color.dark_gray, (0.16, 0.04), (-0.55, 0.23))
-btn_bord = create_menu_button('bord.png', color.dark_gray, (0.16, 0.04), (-0.55, 0.16))
+Entity(parent=settings_panel, model='quad', color=color.rgb(25, 25, 32), scale=(0.8, 0.7), z=0.1)
+Entity(parent=skins_panel, model='quad', color=color.rgb(25, 25, 32), scale=(0.8, 0.7), z=0.1)
 
-btn_full.on_click = set_fullscreen
-btn_win.on_click = set_windowed
-btn_bord.on_click = set_borderless
+Text(text="SETTINGS", parent=settings_panel, position=(0, 0.25), origin=(0,0), scale=1.5, color=color.gold, z=0.0)
+Text(text="WEAPON SKINS", parent=skins_panel, position=(0, 0.25), origin=(0,0), scale=1.5, color=color.gold, z=0.0)
 
-btn_slow = create_menu_button('slow.png', color.dark_gray, (0.16, 0.04), (-0.55, -0.05))
-btn_med = create_menu_button('med.png', color.dark_gray, (0.16, 0.04), (-0.55, -0.12))
-btn_high = create_menu_button('high.png', color.dark_gray, (0.16, 0.04), (-0.55, -0.19))
+def show_main_tab():
+    settings_panel.enabled = False
+    skins_panel.enabled = False
 
-btn_slow.on_click = set_sens_low
-btn_med.on_click = set_sens_med
-btn_high.on_click = set_sens_high
+def show_settings_tab():
+    settings_panel.enabled = True
+    skins_panel.enabled = False
 
-sound_btn = create_menu_button('sound.png', color.lime, (0.16, 0.04), (-0.55, -0.31))
-sound_btn.on_click = toggle_sound
+def show_skins_tab():
+    settings_panel.enabled = False
+    skins_panel.enabled = True
 
-sk_red = create_menu_button('skin_red_btn.png', color.red, (0.16, 0.04), (0.55, 0.3))
-sk_blue = create_menu_button('skin_blue_btn.png', color.blue, (0.16, 0.04), (0.55, 0.23))
-sk_green = create_menu_button('skin_green_btn.png', color.green, (0.16, 0.04), (0.55, 0.16))
-sk_gold = create_menu_button('skin_gold_btn.png', color.gold, (0.16, 0.04), (0.55, 0.09))
-sk_black = create_menu_button('skin_black_btn.png', color.black, (0.16, 0.04), (0.55, 0.02))
+def start_game():
+    global game_started
+    game_started = True
+    main_menu_panel.enabled = False
+    player.enabled = True
+    gun.enabled = True
+    crosshair.enabled = True
+    for e in enemies: e.enabled = True
+    for a in allies: a.enabled = True
+    mouse.locked = True
 
-sk_red.on_click = skin_red
-sk_blue.on_click = skin_blue
-sk_green.on_click = skin_green
-sk_gold.on_click = skin_gold
-sk_black.on_click = skin_black
+btn_start = create_clean_button("PLAY GAME", (0, 0.05), start_game)
+btn_open_settings = create_clean_button("SETTINGS", (0, -0.05), show_settings_tab)
+btn_open_skins = create_clean_button("SKINS", (0, -0.15), show_skins_tab)
+btn_quit = create_clean_button("QUIT", (0, -0.25), application.quit, color_bg=color.rgb(100, 30, 30))
 
-close_all_tabs()
+create_clean_button("Fullscreen: Toggle", (-0.18, 0.1), set_fullscreen, parent=settings_panel)
+create_clean_button("Low-End Mode", (-0.18, 0.0), apply_low_end_settings, parent=settings_panel)
+create_clean_button("Audio Toggle", (-0.18, -0.1), toggle_sound, parent=settings_panel)
+create_clean_button("Sens: Low", (0.18, 0.1), set_sens_low, parent=settings_panel)
+create_clean_button("Sens: Med", (0.18, 0.0), set_sens_med, parent=settings_panel)
+create_clean_button("Sens: High", (0.18, -0.1), set_sens_high, parent=settings_panel)
+create_clean_button("<- Back", (0, -0.25), show_main_tab, parent=settings_panel)
+
+create_clean_button("Red Skin", (0, 0.12), skin_red, parent=skins_panel, color_bg=color.rgb(150, 40, 40))
+create_clean_button("Blue Skin", (0, 0.04), skin_blue, parent=skins_panel, color_bg=color.rgb(40, 90, 150))
+create_clean_button("Green Skin", (0, -0.04), skin_green, parent=skins_panel, color_bg=color.rgb(40, 150, 90))
+create_clean_button("Gold Skin", (0, -0.12), skin_gold, parent=skins_panel, color_bg=color.rgb(180, 150, 30))
+create_clean_button("<- Back", (0, -0.25), show_main_tab, parent=skins_panel)
+
+game_started = False
 
 # --- MOD LOADING SYSTEM ---
 def load_mods():
     if not os.path.exists('mods'):
         os.makedirs('mods')
-
     mod_files = glob.glob("mods/*.py")
     for mod_path in mod_files:
         mod_name = os.path.basename(mod_path)[:-3]
@@ -222,28 +228,44 @@ def load_mods():
                 spec = importlib.util.spec_from_file_location(mod_name, mod_path)
                 mod = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(mod)
-
                 if hasattr(mod, 'init_mod'):
                     mod.init_mod(app, player, gun)
-                print(f"[MOD SYSTEM] Loaded mod: {mod_name}")
             except Exception as e:
-                print(f"[MOD SYSTEM] Error loading mod {mod_name}: {e}")
-
+                print(f"[MOD SYSTEM ERROR] {e}")
 load_mods()
 
-# --- 4. WORLD & BOTS ---
-floor = Entity(model='cube', texture='white_cube', color=color.green, scale=(200, 10, 200), position=(0, -5, 0), collider='box', name='floor')
+# --- 4. WORLD, BOTS, CAR & PHONE ---
+floor = Entity(model='cube', texture='white_cube', color=color.rgb(60, 140, 60), scale=(200, 10, 200), position=(0, -5, 0), collider='box', name='floor')
+
+car = Entity(model='cube', color=color.azure, scale=(2.5, 1, 5), collider='box', position=(10, 0.5, 10))
+in_car = False
+radio_on = False
+car_speed = 25
+car_ui_text = Text(text="", position=(0, -0.4), origin=(0,0), scale=1.5, color=color.lime, enabled=False, parent=camera.ui)
+
+phone_ui = Entity(parent=camera.ui, enabled=False)
+phone_bg = Entity(parent=phone_ui, model='quad', color=color.black90, scale=(0.35, 0.65), position=(0.6, -0.15))
+phone_screen = Entity(parent=phone_bg, model='quad', color=color.dark_gray, scale=(0.9, 0.9), position=(0, 0, -0.01))
+phone_app_title = Text(parent=phone_bg, text="Lost SMP - v0.0.7 Chat", position=(0, 0.4), origin=(0,0), scale=2, z=-0.02, color=color.cyan)
+phone_chat_log = Text(
+    parent=phone_bg, 
+    text="[Μάνος]: Τσεκάρετε το νέο update v0.0.7!\n\n[Ραφαήλ]: Ωραίο το clean UI!\n\n[System]: Server TPS 20.0 (Optimized)", 
+    position=(-0.4, 0.2), 
+    scale=1.5, 
+    z=-0.02
+)
+
 enemies = []
 allies = []
 
 def spawn_enemy():
-    e = Entity(model='cube', color=color.rgb(139, 115, 85), texture='white_cube', scale=(1, 2, 1), position=(random.randint(-30, 30), 1, random.randint(-30, 30)), collider='box', name='enemy')
+    e = Entity(model='cube', color=color.rgb(150, 90, 60), texture='white_cube', scale=(1, 2, 1), position=(random.randint(-30, 30), 1, random.randint(-30, 30)), collider='box', name='enemy')
     Entity(model='cube', parent=e, color=color.black, texture='white_cube', scale=(1.02, 0.4, 1.02), position=(0, 0.8, 0), collider='box', name='head')
     enemies.append(e)
     e.enabled = False 
 
 def spawn_ally():
-    a = Entity(model='cube', color=color.blue, texture='white_cube', scale=(1, 2, 1), position=(random.randint(-10, 10), 1, random.randint(-10, 10)), collider='box', name='ally')
+    a = Entity(model='cube', color=color.rgb(50, 100, 220), texture='white_cube', scale=(1, 2, 1), position=(random.randint(-10, 10), 1, random.randint(-10, 10)), collider='box', name='ally')
     Entity(model='cube', parent=a, color=color.dark_gray, texture='white_cube', scale=(1.1, 0.3, 1.1), position=(0, 0.9, 0))
     allies.append(a)
     a.enabled = False 
@@ -258,27 +280,26 @@ def init_game():
 init_game()
 
 def respawn():
+    global in_car, radio_on
     if not game_started: return 
+    
+    if in_car:
+        in_car = False
+        radio_on = False
+        player.enabled = True
+        gun.enabled = True
+        crosshair.enabled = True
+        car_ui_text.enabled = False
+        camera.parent = player.camera_pivot
+        camera.position = (0, 0, 0)
+        camera.rotation = (0, 0, 0)
+        
     player.position = (0, 10, 0)
     init_game()
     for e in enemies: e.enabled = True
     for a in allies: a.enabled = True
     mouse.locked = True
-
-def start_game():
-    global game_started
-    game_started = True
-    
-    destroy(menu_bg); destroy(title_screen)
-    destroy(btn_full); destroy(btn_win); destroy(btn_bord)
-    destroy(btn_slow); destroy(btn_med); destroy(btn_high); destroy(sound_btn)
-    destroy(sk_red); destroy(sk_blue); destroy(sk_green); destroy(sk_gold); destroy(sk_black)
-    destroy(btn_settings_tab); destroy(btn_skins_tab)
-    
-    player.enabled = True; gun.enabled = True; crosshair.enabled = True  
-    for e in enemies: e.enabled = True
-    for a in allies: a.enabled = True
-    mouse.locked = True
+    phone_ui.enabled = False
 
 # --- 5. SHOOTING ---
 def shoot():
@@ -290,8 +311,7 @@ def shoot():
     elif mode == "green": shoot_cooldown = 1.2
 
     if sound_enabled and current_sound and current_sound.clip:
-        try:
-            current_sound.time = 0; current_sound.play()
+        try: current_sound.time = 0; current_sound.play()
         except: pass
     
     count = 5 if mode == "red" else 1
@@ -320,111 +340,96 @@ def shoot():
 def update():
     global mode, current_sound, shoot_cooldown, game_started, was_zoomed, sound_enabled, zoom_sound, xbox_controller
     global gamepad_move_speed, gamepad_camera_sensitivity, lb_held, rb_held, rt_held
+    global in_car, car_speed
 
-    # 0. DAY / NIGHT CYCLE
     phase = (math.sin(time.time() * day_night_speed) + 1) * 0.5
     sky_color = lerp(day_color, night_color, phase)
     camera.clear_color = sky_color
-    if 'menu_bg' in globals():
-        try:
-            menu_bg.color = sky_color
-        except:
-            pass
     
-    # 1. PROCESS PYGAME EVENTS (KEEPING 'Q' UNLOCKED)
     for event in pygame.event.get():
         if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_q:
-                application.quit()
+            if event.key == pygame.K_q: application.quit()
         elif event.type == pygame.JOYBUTTONDOWN:
-            if (event.button == 0 or event.button == 7) and not game_started: # A button or Start to launch
+            if (event.button == 0 or event.button == 7) and not game_started:
                 start_game()
 
     lt_pressed = False
     rt_pressed = False
     
     if xbox_controller:
-        # 2. STICKS MOVEMENT
         try:
             move_x = xbox_controller.get_axis(0)  
             move_y = -xbox_controller.get_axis(1) 
             if abs(move_x) < 0.20: move_x = 0
             if abs(move_y) < 0.20: move_y = 0
             
-            move_direction = (player.forward * move_y + player.right * move_x)
-            player.position += move_direction * gamepad_move_speed * time.dt
+            if not in_car:
+                move_direction = (player.forward * move_y + player.right * move_x)
+                player.position += move_direction * gamepad_move_speed * time.dt
 
             look_x = xbox_controller.get_axis(3)
             look_y = xbox_controller.get_axis(4)
             if abs(look_x) < 0.20: look_x = 0
             if abs(look_y) < 0.20: look_y = 0
 
-            player.rotation_y += look_x * gamepad_camera_sensitivity * time.dt
-            camera.rotation_x += look_y * gamepad_camera_sensitivity * time.dt
-            camera.rotation_x = clamp(camera.rotation_x, -85, 85) 
+            if not in_car:
+                player.rotation_y += look_x * gamepad_camera_sensitivity * time.dt
+                camera.rotation_x += look_y * gamepad_camera_sensitivity * time.dt
+                camera.rotation_x = clamp(camera.rotation_x, -85, 85) 
 
-            # 3. REAL LINUX PYGAME TRIGGERS MAPPING (AXIS 2 AND AXIS 5)
-            # When resting, axes are -1.0. When fully pressed, they go to 1.0.
-            if xbox_controller.get_axis(2) > 0.5:  # Left Trigger (Scope)
-                lt_pressed = True
-            if xbox_controller.get_axis(5) > 0.5:  # Right Trigger (Shoot)
-                rt_pressed = True
-        except:
-            pass
+            if xbox_controller.get_axis(2) > 0.5: lt_pressed = True
+            if xbox_controller.get_axis(5) > 0.5: rt_pressed = True
+        except: pass
 
-        # 4. WEAPON CHANGE (LB / RB)
-        if game_started:
+        if game_started and not in_car:
             try:
                 weapon_order = ["red", "yellow", "green"]
-                if xbox_controller.get_button(5): # RB
+                if xbox_controller.get_button(5):
                     if not rb_held:
                         current_index = weapon_order.index(mode)
                         next_index = (current_index + 1) % len(weapon_order)
                         apply_weapon_mode(weapon_order[next_index])
                         rb_held = True
-                else:
-                    rb_held = False
+                else: rb_held = False
 
-                if xbox_controller.get_button(4): # LB
+                if xbox_controller.get_button(4):
                     if not lb_held:
                         current_index = weapon_order.index(mode)
                         next_index = (current_index - 1) % len(weapon_order)
                         apply_weapon_mode(weapon_order[next_index])
                         lb_held = True
-                else:
-                    lb_held = False
-            except:
-                pass
+                else: lb_held = False
+            except: pass
 
     if not game_started:
         mouse.locked = False
         return
 
+    if in_car:
+        car.position += car.forward * (held_keys['w'] - held_keys['s']) * car_speed * time.dt
+        car.rotation_y += (held_keys['d'] - held_keys['a']) * 70 * time.dt
+        camera.world_position = car.world_position + car.up * 4 - car.forward * 8
+        camera.look_at(car)
+        player.position = car.position
+
     if shoot_cooldown > 0: shoot_cooldown -= time.dt
 
-    # --- SHOOT DETECTIONS ---
-    if mouse.locked:
+    if mouse.locked and not in_car:
         if mode != "green":
-            if held_keys['left mouse'] or rt_pressed:
-                shoot()
+            if held_keys['left mouse'] or rt_pressed: shoot()
         else:
-            if held_keys['left mouse']:
-                shoot()
+            if held_keys['left mouse']: shoot()
             if rt_pressed:
                 if not rt_held:
-                    shoot()
-                    rt_held = True
-            else:
-                rt_held = False
+                    shoot(); rt_held = True
+            else: rt_held = False
             
-    # --- SNIPER ZOOM ---
-    if mode == "green" and mouse.locked and (held_keys['right mouse'] or lt_pressed):
+    if mode == "green" and mouse.locked and not in_car and (held_keys['right mouse'] or lt_pressed):
         camera.fov = 25
         gun.position = (0.15, -0.1, 0.3)  
         if not was_zoomed:
             if sound_enabled and zoom_sound and zoom_sound.clip:
-                try:
-                    zoom_sound.time = 0; zoom_sound.play()
+                try: zoom_sound.time = 0; zoom_sound.play()
                 except: pass
             was_zoomed = True
     else:
@@ -432,7 +437,6 @@ def update():
         if mode == "red": gun.color = gun_skin_color
         elif mode == "yellow": gun.color = color.yellow
         elif mode == "green": gun.color = color.green
-            
         gun.position = (0.25, -0.2, 0.5)
         was_zoomed = False
     
@@ -452,20 +456,92 @@ def update():
 # --- 7. INPUT ---
 def input(key):
     global mode, current_sound, game_started, gun_skin_color
-    
-    if key == 'q' or key == 'Q':
-        application.quit()
+    global in_car, radio_on
+
+    if key == 'q' or key == 'Q': application.quit()
 
     if not game_started:
-        if key == 'space': start_game()
         return 
 
-    if key == 'r': respawn()
+    if key == 'm' and not in_car:
+        phone_ui.enabled = not phone_ui.enabled
+        mouse.locked = not phone_ui.enabled
+        if phone_ui.enabled:
+            player.enabled = False
+            gun.enabled = False
+            crosshair.enabled = False
+        else:
+            player.enabled = True
+            gun.enabled = True
+            crosshair.enabled = True
+
+    if key == 'e' and not phone_ui.enabled:
+        if not in_car and distance(car.position, player.position) < 4:
+            in_car = True
+            player.enabled = False
+            gun.enabled = False
+            crosshair.enabled = False
+            car_ui_text.enabled = True
+            car_ui_text.text = "Οδηγείς [v0.0.7]. [E] για Έξοδο | [R] για Ραδιόφωνο"
+        elif in_car:
+            in_car = False
+            player.enabled = True
+            gun.enabled = True
+            crosshair.enabled = True
+            player.position = car.position + (3, 1, 0)
+            car_ui_text.enabled = False
+            camera.parent = player.camera_pivot
+            camera.position = (0, 0, 0)
+            camera.rotation = (0, 0, 0)
+
+    if in_car and key == 'r':
+        radio_on = not radio_on
+        if radio_on: car_ui_text.text = "Ραδιόφωνο: [ON] Παίζει: Piui Tic Tac (Remix)"
+        else: car_ui_text.text = "Ραδιόφωνο: [OFF]"
+
+    if key == 'r' and not in_car and not phone_ui.enabled: respawn()
         
-    if key == '1': apply_weapon_mode("red")
-    elif key == '2': apply_weapon_mode("yellow")
-    elif key == '3': apply_weapon_mode("green")
+    if not in_car and not phone_ui.enabled:
+        if key == '1': apply_weapon_mode("red")
+        elif key == '2': apply_weapon_mode("yellow")
+        elif key == '3': apply_weapon_mode("green")
 
-    if key == 'escape': mouse.locked = not mouse.locked
+    if key == 'escape':
+        if not phone_ui.enabled: mouse.locked = not mouse.locked
 
+# --- GITHUB UPDATE CHECKER ---
+def check_for_updates():
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
+    try:
+        response = requests.get(url, timeout=3)
+        if response.status_code == 200:
+            releases = response.json()
+            if not isinstance(releases, list) or not releases: return
+
+            latest_version = releases[0].get('tag_name', '')
+            if latest_version and latest_version != CURRENT_VERSION:
+                all_notes = ""
+                for rel in releases:
+                    tag = rel.get('tag_name', 'Unknown')
+                    body = rel.get('body', 'Χωρίς σημειώσεις.')
+                    all_notes += f"--- {tag} ---\n{body}\n\n"
+                    
+                show_update_popup(latest_version, all_notes)
+    except: pass
+
+def show_update_popup(version, notes):
+    mouse.locked = False
+    overlay = Entity(model='quad', scale=(2, 2), color=color.rgba(0, 0, 0, 0.7), parent=camera.ui, z=-1)
+    popup_panel = Entity(model='quad', scale=(0.85, 0.75), color=color.dark_gray, parent=camera.ui)
+    Text(text=f"NEW UPDATE: {version}!", position=(0, 0.3), origin=(0, 0), scale=1.4, color=color.gold, parent=popup_panel)
+    clean_notes = notes[:450] + "..." if len(notes) > 450 else notes
+    Text(text=clean_notes, position=(0, 0.05), origin=(0, 0), scale=0.8, color=color.white, parent=popup_panel)
+    close_btn = Button(text='OK / CLOSE', scale=(0.3, 0.08), position=(0, -0.28), color=color.lime, parent=popup_panel)
+
+    def close_popup():
+        destroy(overlay)
+        destroy(popup_panel)
+    close_btn.on_click = close_popup
+
+check_for_updates()
 app.run()
