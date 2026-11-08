@@ -14,4 +14,8 @@ First you will need the required dependancies:
 
 ```pip install ursina pygame requests```
 
-After you install them you just run the python script and it works
+After you install them you copy the repository and you run the python script like that: ```python3 main.py``` 
+
+# CAUTION!!!
+
+the command:```python3 main.py``` works in the folder different-FPS(the repository's folder in your device)
